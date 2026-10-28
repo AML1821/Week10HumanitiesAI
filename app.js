@@ -322,6 +322,10 @@
       const target = id && panel.querySelector(`[data-open="${CSS.escape(id)}"]`);
       (target || $(`#tab-${state.tab}`)).focus();
     });
+    // Enter in a field would submit the dialog form and close the dossier; only buttons should do that.
+    $("#dossier-form").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.tagName === "INPUT") e.preventDefault();
+    });
 
     // Open dossiers from the ranked lists too.
     for (const id of ["#log-list", "#log-unrated", "#signals-list", "#readouts"]) {
