@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dead Signal</title>
+  <meta name="description" content="Dead Signal: a sci-fi horror watch tracker, recovered from the terminal of a derelict ship.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23120a02'/%3E%3Cpath d='M2 9h3l2-5 2 9 2-6 1 2h2' fill='none' stroke='%23ffb000' stroke-width='1.5'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="crt">
+    <header class="masthead">
+      <div class="masthead-row">
+        <h1 class="logo"><span class="blink-dot" aria-hidden="true"></span>DEAD SIGNAL</h1>
+        <div class="masthead-actions">
+          <button type="button" id="backup-btn" class="btn" aria-haspopup="dialog">Backup</button>
+        </div>
+      </div>
+      <p class="sub">USCSS <span id="ship-name">ACHERON DRIFT</span> // CREW ENTERTAINMENT ARCHIVE // LIFE SUPPORT: <span class="warn">FAILING</span></p>
+      <p class="sub dim" id="status-line">&gt; ESTABLISHING LINK<span class="cursor">_</span></p>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button type="button" role="tab" id="tab-archive" aria-controls="panel-archive" aria-selected="true" data-tab="archive">[1] Archive</button>
+      <button type="button" role="tab" id="tab-log" aria-controls="panel-log" aria-selected="false" data-tab="log" tabindex="-1">[2] My log</button>
+      <button type="button" role="tab" id="tab-signals" aria-controls="panel-signals" aria-selected="false" data-tab="signals" tabindex="-1">[3] Signals</button>
+      <button type="button" role="tab" id="tab-readouts" aria-controls="panel-readouts" aria-selected="false" data-tab="readouts" tabindex="-1">[4] Readouts</button>
+    </nav>
+
+    <main>
+      <!-- ARCHIVE -->
+      <section id="panel-archive" role="tabpanel" aria-labelledby="tab-archive" class="panel">
+        <form class="filters" id="filters" autocomplete="off" onsubmit="return false">
+          <label class="field grow">
+            <span>Query title</span>
+            <input type="search" id="f-search" placeholder="e.g. alien, thing, fly…">
+          </label>
+          <label class="field">
+            <span>Decade</span>
+            <select id="f-decade"><option value="">All</option></select>
+          </label>
+          <label class="field">
+            <span>Tag</span>
+            <select id="f-tag"><option value="">All</option></select>
+          </label>
+          <label class="field">
+            <span>Franchise</span>
+            <select id="f-franchise"><option value="">All</option></select>
+          </label>
+          <label class="field">
+            <span>My status</span>
+            <select id="f-status">
+              <option value="">Any</option>
+              <option value="none">Not logged</option>
+              <option value="want">Queued</option>
+              <option value="in_progress">Watching</option>
+              <option value="completed">Finished</option>
+              <option value="dropped">Dropped</option>
+              <option value="fav">★ Favorites</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Sort</span>
+            <select id="f-sort">
+              <option value="title">Title A–Z</option>
+              <option value="year">Year (oldest)</option>
+              <option value="year-desc">Year (newest)</option>
+              <option value="rating">My rating</option>
+            </select>
+          </label>
+          <button type="button" class="btn ghost" id="f-reset">Clear</button>
+        </form>
+        <p class="readout-line" id="archive-count" aria-live="polite"></p>
+        <ul class="film-list" id="archive-list"></ul>
+        <button type="button" class="btn ghost more" id="archive-more" hidden>Load more records</button>
+      </section>
+
+      <!-- MY LOG -->
+      <section id="panel-log" role="tabpanel" aria-labelledby="tab-log" class="panel" hidden>
+        <div class="panel-head">
+          <h2>&gt; Personal log</h2>
+          <p class="dim">Rated films, ranked. Ties broken by favorite star, then most recent date.</p>
+        </div>
+        <ol class="rank-list" id="log-list"></ol>
+        <div id="log-unrated"></div>
+      </section>
+
+      <!-- SIGNALS -->
+      <section id="panel-signals" role="tabpanel" aria-labelledby="tab-signals" class="panel" hidden>
+        <div class="panel-head">
+          <h2>&gt; Incoming signals</h2>
+          <p class="dim">Recommendations from the tags of films you rated 7 or higher. Rare tags carry more weight; unseen entries in a franchise you rated highly get a boost.</p>
+        </div>
+        <div id="signals-profile"></div>
+        <ol class="rank-list" id="signals-list"></ol>
+      </section>
+
+      <!-- READOUTS -->
+      <section id="panel-readouts" role="tabpanel" aria-labelledby="tab-readouts" class="panel" hidden>
+        <div class="panel-head">
+          <h2>&gt; Diagnostic readouts</h2>
+          <p class="dim">Telemetry from your log.</p>
+        </div>
+        <div id="readouts"></div>
+      </section>
+    </main>
+
+    <footer class="foot dim">
+      Data: Wikipedia, <a href="https://en.wikipedia.org/wiki/List_of_science_fiction_horror_films" target="_blank" rel="noopener">List of science fiction horror films</a>. Your log stays in this browser. Use Backup to keep a copy.
+    </footer>
+  </div>
+
+  <!-- DOSSIER -->
+  <dialog id="dossier" aria-labelledby="dossier-title">
+    <form method="dialog" id="dossier-form">
+      <div class="dossier-head">
+        <p class="dim small" id="dossier-file"></p>
+        <h2 id="dossier-title"></h2>
+        <button type="submit" value="close" class="btn ghost close" aria-label="Close dossier">[X]</button>
+      </div>
+      <dl class="meta" id="dossier-meta"></dl>
+      <fieldset class="status-set">
+        <legend>Status</legend>
+        <div class="seg" id="d-status">
+          <label><input type="radio" name="status" value=""> <span>None</span></label>
+          <label><input type="radio" name="status" value="want"> <span>Queued</span></label>
+          <label><input type="radio" name="status" value="in_progress"> <span>Watching</span></label>
+          <label><input type="radio" name="status" value="completed"> <span>Finished</span></label>
+          <label><input type="radio" name="status" value="dropped"> <span>Dropped</span></label>
+        </div>
+      </fieldset>
+      <div class="row">
+        <label class="field">
+          <span>Rating <output id="d-rating-out">—</output></span>
+          <input type="range" id="d-rating" min="0" max="10" step="1" value="0" aria-describedby="d-rating-hint">
+          <small id="d-rating-hint" class="dim">0 = unrated</small>
+        </label>
+        <label class="field">
+          <span>Date</span>
+          <input type="date" id="d-date">
+        </label>
+        <div class="field">
+          <span>Favorite</span>
+          <button type="button" id="d-fav" class="btn star" aria-pressed="false">☆ Mark</button>
+        </div>
+      </div>
+      <label class="field">
+        <span>Notes</span>
+        <textarea id="d-notes" rows="4" placeholder="Log entry…"></textarea>
+      </label>
+      <div class="dossier-foot">
+        <span class="dim small" id="d-saved" aria-live="polite"></span>
+        <button type="button" class="btn ghost" id="d-clear">Purge entry</button>
+        <button type="submit" value="close" class="btn">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- BACKUP -->
+  <dialog id="backup" aria-labelledby="backup-title">
+    <form method="dialog">
+      <div class="dossier-head">
+        <h2 id="backup-title">&gt; Backup</h2>
+        <button type="submit" value="close" class="btn ghost close" aria-label="Close backup">[X]</button>
+      </div>
+      <p>Your log lives in this browser only. Export it to a JSON file, or load one back in.</p>
+      <p class="dim" id="backup-summary"></p>
+      <div class="row">
+        <button type="button" class="btn" id="export-btn">Export log (.json)</button>
+        <label class="btn ghost file-btn">Import log…
+          <input type="file" id="import-file" accept="application/json,.json">
+        </label>
+      </div>
+      <label class="check"><input type="checkbox" id="import-merge" checked> Merge with current log (unchecked replaces it)</label>
+      <p class="small" id="backup-msg" aria-live="polite"></p>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
