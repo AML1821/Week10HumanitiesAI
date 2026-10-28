@@ -514,9 +514,168 @@
       : `<li class="empty" style="display:block;cursor:default">ARCHIVE EXHAUSTED. NOTHING LEFT MATCHES YOUR FREQUENCIES.</li>`;
   }
 
-  // ---------- placeholders filled in by later sections ----------
-  function renderReadouts() {}
-  function setupBackup() {}
+  // ---------- readouts ----------
+  function hbars(rows, { max, fmt = (v) => v, title = () => "" } = {}) {
+    const m = max ?? Math.max(...rows.map((r) => r.v), 1);
+    return rows.map((r) => `<div class="hbar" title="${esc(title(r))}"${r.id ? ` data-open="${esc(r.id)}" tabindex="0" style="cursor:pointer"` : ""}>
+      <span class="lbl">${esc(r.label)}</span>
+      <span class="trk"><span class="fill" style="display:block;width:${(r.v / m) * 100}%"></span></span>
+      <span class="val">${fmt(r.v)}</span></div>`).join("");
+  }
+
+  function avgBy(rated, keysOf) {
+    const acc = new Map();
+    for (const { f, e } of rated) for (const k of keysOf(f)) {
+      const a = acc.get(k) || { sum: 0, n: 0 };
+      a.sum += e.rating; a.n++;
+      acc.set(k, a);
+    }
+    return [...acc.entries()].map(([k, a]) => ({ label: k, v: a.sum / a.n, n: a.n }));
+  }
+
+  function renderReadouts() {
+    const all = loggedFilms();
+    const rated = all.filter(({ e }) => e.rating > 0);
+    const root = $("#readouts");
+    if (!rated.length) {
+      root.innerHTML = `<p class="empty">NO TELEMETRY. RATE SOME FILMS TO GENERATE READOUTS.</p>`;
+      return;
+    }
+    const count = (s) => all.filter(({ e }) => e.status === s).length;
+    const mean = rated.reduce((s, r) => s + r.e.rating, 0) / rated.length;
+    const favs = all.filter(({ e }) => e.favorite).length;
+    const stats = [
+      ["Logged", all.length],
+      ["Rated", rated.length],
+      ["Mean rating", mean.toFixed(1)],
+      ["Finished", count("completed")],
+      ["Queued", count("want")],
+      ["Favorites", favs],
+      ["Archive seen", `${Math.round((count("completed") / state.films.length) * 100)}%`],
+    ];
+
+    // Rating distribution 1..10
+    const dist = Array.from({ length: 10 }, (_, i) => rated.filter(({ e }) => e.rating === i + 1).length);
+    const dmax = Math.max(...dist, 1);
+    const distHtml = `<div class="vbars" role="img" aria-label="Rating distribution: ${dist.map((n, i) => `${i + 1}: ${n}`).join(", ")}">
+      ${dist.map((n) => `<div class="col"><span class="c">${n || ""}</span><span class="b${n ? "" : " zero"}" style="height:${(n / dmax) * 100}%"></span></div>`).join("")}
+    </div><div class="vlabels">${dist.map((_, i) => `<span>${i + 1}</span>`).join("")}</div>`;
+
+    const byDecade = avgBy(rated, (f) => (f.year ? [`${decadeOf(f.year)}s`] : [])).sort((a, b) => a.label.localeCompare(b.label));
+    const byTag = avgBy(rated, (f) => f.tags || []).filter((r) => r.n >= 2).sort((a, b) => b.v - a.v || b.n - a.n).slice(0, 10);
+    const statusRows = Object.entries(STATUSES).map(([k, label]) => ({ label, v: count(k) }));
+
+    // Titles watched per month (by logged date), last 12 months that have data.
+    const months = new Map();
+    for (const { e } of all) if (e.date && /^\d{4}-\d{2}/.test(e.date) && e.status === "completed") {
+      const k = e.date.slice(0, 7);
+      months.set(k, (months.get(k) || 0) + 1);
+    }
+    const monthRows = [...months.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-12).map(([label, v]) => ({ label, v }));
+
+    const chart = (title, body) => `<section class="chart"><h3>${title}</h3>${body}</section>`;
+    const r1 = (v) => v.toFixed(1);
+    root.innerHTML = `
+      <div class="stats">${stats.map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>
+      <div class="charts">
+        ${chart("Rating distribution", distHtml)}
+        ${chart("Mean rating by decade", hbars(byDecade, { max: 10, fmt: r1, title: (r) => `${r.n} rated` }))}
+        ${chart("Highest-rated tags (2+ films)", byTag.length ? hbars(byTag, { max: 10, fmt: r1, title: (r) => `${r.n} rated` }) : `<p class="dim small">Rate at least two films sharing a tag.</p>`)}
+        ${chart("Log status", hbars(statusRows))}
+        ${monthRows.length ? chart("Finished per month", hbars(monthRows)) : ""}
+      </div>`;
+  }
+
+  // ---------- backup ----------
+  function setupBackup() {
+    const dlg = $("#backup");
+    const msg = (text, cls = "") => { const m = $("#backup-msg"); m.textContent = text; m.className = "small " + cls; };
+    const summary = () => {
+      const n = Object.keys(state.log).length;
+      $("#backup-summary").textContent = `${n} entr${n === 1 ? "y" : "ies"} currently in this browser.`;
+    };
+    $("#backup-btn").addEventListener("click", () => { summary(); msg(""); dlg.showModal(); });
+
+    $("#export-btn").addEventListener("click", () => {
+      const payload = {
+        app: "dead-signal",
+        version: 1,
+        exported: new Date().toISOString(),
+        count: Object.keys(state.log).length,
+        log: state.log,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `dead-signal-log-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      msg(`Exported ${payload.count} entries.`, "ok");
+    });
+
+    $("#import-file").addEventListener("change", async (ev) => {
+      const file = ev.target.files[0];
+      ev.target.value = "";
+      if (!file) return;
+      let incoming;
+      try {
+        incoming = parseBackup(JSON.parse(await file.text()));
+      } catch (err) {
+        msg(`Import failed: ${err.message}`, "err");
+        return;
+      }
+      const ids = Object.keys(incoming);
+      const known = ids.filter((id) => state.byId.has(id)).length;
+      const merge = $("#import-merge").checked;
+      if (!merge && !confirm(`Replace your current log (${Object.keys(state.log).length} entries) with ${ids.length} imported entries?`)) {
+        msg("Import cancelled.");
+        return;
+      }
+      if (merge) {
+        // Newer edit wins when both sides have the same film.
+        for (const [id, e] of Object.entries(incoming)) {
+          const cur = state.log[id];
+          if (!cur || String(e.updated || "") >= String(cur.updated || "")) state.log[id] = e;
+        }
+      } else {
+        state.log = incoming;
+      }
+      saveLog();
+      summary();
+      msg(`Imported ${ids.length} entries${known < ids.length ? ` (${ids.length - known} not in this archive, kept anyway)` : ""}.`, "ok");
+      renderCurrent();
+    });
+  }
+
+  // Accepts this app's export, a bare {id: entry} map, or the dataset format with items[].user.
+  function parseBackup(data) {
+    if (!data || typeof data !== "object") throw new Error("not a JSON object");
+    let raw;
+    if (data.log && typeof data.log === "object") raw = data.log;
+    else if (Array.isArray(data.items)) {
+      raw = {};
+      for (const it of data.items) if (it?.id && it.user) {
+        raw[it.id] = { status: it.user.status, rating: it.user.rating, date: it.user.date_completed, notes: it.user.review, favorite: it.user.favorite };
+      }
+    } else raw = data;
+    const out = {};
+    for (const [id, e] of Object.entries(raw)) {
+      if (!e || typeof e !== "object") continue;
+      const clean = {
+        status: e.status in STATUSES ? e.status : "",
+        rating: Math.max(0, Math.min(10, Math.round(Number(e.rating) || 0))),
+        date: typeof e.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : "",
+        notes: typeof e.notes === "string" ? e.notes : "",
+        favorite: e.favorite === true,
+      };
+      if (typeof e.updated === "string") clean.updated = e.updated;
+      if (!isEmptyEntry(clean)) out[id] = clean;
+    }
+    if (!Object.keys(out).length && Object.keys(raw).length) throw new Error("no valid log entries found");
+    return out;
+  }
 
   boot();
 })();
