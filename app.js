@@ -312,7 +312,16 @@
         if ((entry(state.current)?.notes || "") !== v) updateEntry(state.current, { notes: v });
       }
     };
-    dlg.addEventListener("close", () => { flushNotes(); state.current = null; renderCurrent(); });
+    dlg.addEventListener("close", () => {
+      const id = state.current;
+      flushNotes();
+      state.current = null;
+      renderCurrent();
+      // The redraw replaced the element that opened the dossier; put focus back on this film's row or card.
+      const panel = $(`#panel-${state.tab}`);
+      const target = id && panel.querySelector(`[data-open="${CSS.escape(id)}"]`);
+      (target || $(`#tab-${state.tab}`)).focus();
+    });
 
     // Open dossiers from the ranked lists too.
     for (const id of ["#log-list", "#log-unrated", "#signals-list", "#readouts"]) {
