@@ -677,7 +677,7 @@
     for (const [id, e] of Object.entries(raw)) {
       if (!e || typeof e !== "object") continue;
       const clean = {
-        status: e.status in STATUSES ? e.status : "",
+        status: Object.hasOwn(STATUSES, e.status) ? e.status : "",
         rating: Math.max(0, Math.min(10, Math.round(Number(e.rating) || 0))),
         date: typeof e.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : "",
         notes: typeof e.notes === "string" ? e.notes : "",
