@@ -374,8 +374,51 @@
     $("#dossier-form").scrollTop = 0;
   }
 
+  // ---------- my log ----------
+  function loggedFilms() {
+    return Object.entries(state.log)
+      .filter(([id]) => state.byId.has(id))
+      .map(([id, e]) => ({ f: state.byId.get(id), e }));
+  }
+
+  function rankRow(n, f, mainExtra, scoreHtml) {
+    return `<li tabindex="0" data-open="${esc(f.id)}">
+      <span class="n">${n}</span>
+      <span class="main"><span class="t">${esc(f.title)}</span> <span class="dim">(${f.year || "?"})</span>${mainExtra}</span>
+      <span class="score">${scoreHtml}</span>
+    </li>`;
+  }
+
+  function renderLog() {
+    const all = loggedFilms();
+    const rated = all.filter(({ e }) => e.rating > 0).sort((a, b) =>
+      b.e.rating - a.e.rating ||
+      (b.e.favorite ? 1 : 0) - (a.e.favorite ? 1 : 0) ||
+      String(b.e.date || "").localeCompare(String(a.e.date || "")) ||
+      sortTitle(a.f.title).localeCompare(sortTitle(b.f.title)));
+
+    // Competition ranking: equal ratings share a rank number.
+    let rank = 0;
+    $("#log-list").innerHTML = rated.length
+      ? rated.map(({ f, e }, i) => {
+          if (i === 0 || e.rating !== rated[i - 1].e.rating) rank = i + 1;
+          const bits = [e.favorite ? "★" : "", statusPill(e), e.date ? `<span class="dim small">${esc(e.date)}</span>` : ""].filter(Boolean).join(" ");
+          const notes = e.notes ? `<span class="why">“${esc(e.notes.length > 140 ? e.notes.slice(0, 140) + "…" : e.notes)}”</span>` : "";
+          return rankRow(rank, f, `<br>${bits}${notes ? "<br>" + notes : ""}<span class="bar-mini"><i style="width:${e.rating * 10}%"></i></span>`, `${e.rating}<small>/10</small>`);
+        }).join("")
+      : `<li class="empty" style="display:block;cursor:default">NO RATED FILMS. OPEN A DOSSIER IN THE ARCHIVE AND SET A RATING.</li>`;
+
+    const unrated = all.filter(({ e }) => !(e.rating > 0) && (e.status || e.favorite || e.notes || e.date));
+    const groups = ["in_progress", "want", "completed", "dropped", ""].map((s) => ({
+      s,
+      items: unrated.filter(({ e }) => (e.status || "") === s).sort((a, b) => sortTitle(a.f.title).localeCompare(sortTitle(b.f.title))),
+    })).filter((g) => g.items.length);
+    $("#log-unrated").innerHTML = groups.map((g) => `
+      <h3 class="section-label">${g.s ? STATUSES[g.s] : "Other"} · unrated (${g.items.length})</h3>
+      <ul class="rank-list">${g.items.map(({ f, e }) => rankRow(e.favorite ? "★" : "·", f, e.date ? ` <span class="dim small">${esc(e.date)}</span>` : "", "")).join("")}</ul>`).join("");
+  }
+
   // ---------- placeholders filled in by later sections ----------
-  function renderLog() {}
   function renderSignals() {}
   function renderReadouts() {}
   function setupBackup() {}
