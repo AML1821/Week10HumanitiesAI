@@ -312,7 +312,20 @@
         if ((entry(state.current)?.notes || "") !== v) updateEntry(state.current, { notes: v });
       }
     };
-    dlg.addEventListener("close", () => { flushNotes(); state.current = null; renderCurrent(); });
+    dlg.addEventListener("close", () => {
+      const id = state.current;
+      flushNotes();
+      state.current = null;
+      renderCurrent();
+      // The redraw replaced the element that opened the dossier; put focus back on this film's row or card.
+      const panel = $(`#panel-${state.tab}`);
+      const target = id && panel.querySelector(`[data-open="${CSS.escape(id)}"]`);
+      (target || $(`#tab-${state.tab}`)).focus();
+    });
+    // Enter in a field would submit the dialog form and close the dossier; only buttons should do that.
+    $("#dossier-form").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.tagName === "INPUT") e.preventDefault();
+    });
 
     // Open dossiers from the ranked lists too.
     for (const id of ["#log-list", "#log-unrated", "#signals-list", "#readouts"]) {
@@ -664,7 +677,7 @@
     for (const [id, e] of Object.entries(raw)) {
       if (!e || typeof e !== "object") continue;
       const clean = {
-        status: e.status in STATUSES ? e.status : "",
+        status: Object.hasOwn(STATUSES, e.status) ? e.status : "",
         rating: Math.max(0, Math.min(10, Math.round(Number(e.rating) || 0))),
         date: typeof e.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : "",
         notes: typeof e.notes === "string" ? e.notes : "",
