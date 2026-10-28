@@ -418,8 +418,103 @@
       <ul class="rank-list">${g.items.map(({ f, e }) => rankRow(e.favorite ? "★" : "·", f, e.date ? ` <span class="dim small">${esc(e.date)}</span>` : "", "")).join("")}</ul>`).join("");
   }
 
+  // ---------- signals ----------
+  // Recommendation model:
+  //  1. Each film rated 7+ adds (rating - 6) to every one of its tags, so a 10 counts 4x a 7.
+  //  2. Tags are weighted by rarity (inverse document frequency): ln(films / films with tag).
+  //     "alien" (158 films) is worth ~1.1; "anthology" (5 films) is worth ~4.6.
+  //  3. A candidate's tag score is sum(profile[tag] * idf[tag]) / sqrt(its tag count),
+  //     so films aren't rewarded just for carrying lots of tags.
+  //  4. Unseen films in a franchise where you rated something 7+ get a boost; full for
+  //     sequels (released after the film you rated), half for earlier entries.
+  const LIKED_MIN = 7;
+  const FRANCHISE_BOOST = 2.5;
+
+  function idf(tag) {
+    const n = state.tagCounts.get(tag) || 1;
+    return Math.log(state.films.length / n);
+  }
+
+  function computeSignals() {
+    const profile = new Map();
+    const liked = [];
+    for (const { f, e } of loggedFilms()) {
+      if (!(e.rating >= LIKED_MIN)) continue;
+      const w = e.rating - (LIKED_MIN - 1);
+      liked.push({ f, w });
+      for (const t of f.tags || []) profile.set(t, (profile.get(t) || 0) + w);
+    }
+    if (!liked.length) return { profile, liked, recs: [] };
+
+    // Average liked weight per franchise, and the earliest year you rated highly in it.
+    const fr = new Map();
+    for (const { f, w } of liked) {
+      if (!f.franchise) continue;
+      const cur = fr.get(f.franchise) || { sum: 0, n: 0, firstYear: Infinity, titles: [] };
+      cur.sum += w; cur.n++; cur.titles.push(f.title);
+      cur.firstYear = Math.min(cur.firstYear, f.year || Infinity);
+      fr.set(f.franchise, cur);
+    }
+
+    const recs = [];
+    for (const f of state.films) {
+      const e = entry(f.id);
+      if (e && (e.rating > 0 || ["completed", "in_progress", "dropped"].includes(e.status))) continue;
+      const tags = f.tags || [];
+      const parts = tags
+        .filter((t) => profile.has(t))
+        .map((t) => ({ t, v: profile.get(t) * idf(t) }))
+        .sort((a, b) => b.v - a.v);
+      const norm = Math.sqrt(Math.max(tags.length, 1));
+      let tagScore = parts.reduce((s, p) => s + p.v, 0) / norm;
+
+      let boost = 0, frWhy = "";
+      const info = f.franchise && fr.get(f.franchise);
+      if (info) {
+        const avg = info.sum / info.n;
+        const isSequel = (f.year || 0) > info.firstYear;
+        boost = FRANCHISE_BOOST * avg * (isSequel ? 1 : 0.5);
+        frWhy = `${isSequel ? "sequel" : "earlier entry"} in ${f.franchise} (you rated ${info.titles.slice(0, 2).join(", ")}${info.titles.length > 2 ? "…" : ""})`;
+      }
+      const score = tagScore + boost;
+      if (score <= 0) continue;
+      recs.push({ f, score, parts, frWhy, queued: e?.status === "want" });
+    }
+    recs.sort((a, b) => b.score - a.score || sortTitle(a.f.title).localeCompare(sortTitle(b.f.title)));
+    return { profile, liked, recs };
+  }
+
+  function renderSignals() {
+    const { profile, liked, recs } = computeSignals();
+    if (!liked.length) {
+      $("#signals-profile").innerHTML = `<p class="empty">NO SIGNAL. RATE AT LEAST ONE FILM ${LIKED_MIN}/10 OR HIGHER TO CALIBRATE THE RECEIVER.</p>`;
+      $("#signals-list").innerHTML = "";
+      return;
+    }
+    const top = [...profile.entries()]
+      .map(([t, w]) => ({ t, w, v: w * idf(t) }))
+      .sort((a, b) => b.v - a.v)
+      .slice(0, 12);
+    $("#signals-profile").innerHTML = `<div class="profile"><span class="dim small">CALIBRATED ON ${liked.length} FILM${liked.length === 1 ? "" : "S"} · STRONGEST FREQUENCIES:</span>
+      ${top.map((p) => `<span class="tag" title="liked weight ${p.w} × rarity ${idf(p.t).toFixed(2)}">${esc(p.t)} <b>${p.v.toFixed(1)}</b></span>`).join("")}</div>`;
+
+    const shown = recs.slice(0, 30);
+    const max = shown[0]?.score || 1;
+    $("#signals-list").innerHTML = shown.length
+      ? shown.map((r, i) => {
+          const why = [
+            r.frWhy ? `▲ ${esc(r.frWhy)}` : "",
+            r.parts.length ? `tags: ${r.parts.slice(0, 4).map((p) => esc(p.t)).join(", ")}` : "",
+          ].filter(Boolean).join(" · ");
+          const pct = Math.round((r.score / max) * 100);
+          return rankRow(i + 1, r.f,
+            `${r.queued ? ` <span class="pill s-want">Queued</span>` : ""}<br><span class="why">${why}</span><span class="bar-mini"><i style="width:${pct}%"></i></span>`,
+            `${pct}<small>%</small>`);
+        }).join("")
+      : `<li class="empty" style="display:block;cursor:default">ARCHIVE EXHAUSTED. NOTHING LEFT MATCHES YOUR FREQUENCIES.</li>`;
+  }
+
   // ---------- placeholders filled in by later sections ----------
-  function renderSignals() {}
   function renderReadouts() {}
   function setupBackup() {}
 
